@@ -1,5 +1,9 @@
 # Upstox Trading Research
 
+> [!CAUTION]
+> **Disclaimer**: This project is for **educational purposes only** and is intended for **paper trading only**. It is **not financial advice**. The author is **not a SEBI registered advisor**. Use this software at your own risk.
+
+
 A paper trading bot for Indian markets focusing on live market data streaming and strategy research.
 
 ## Setup
