@@ -1,0 +1,228 @@
+:root {
+    --bg-dark: #0a0c10;
+    --accent-blue: #0066ff;
+    --accent-green: #00f291;
+    --accent-red: #ff4d4d;
+    --glass-bg: rgba(255, 255, 255, 0.05);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --text-primary: #ffffff;
+    --text-secondary: #94a3b8;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-dark);
+    color: var(--text-primary);
+    overflow-x: hidden;
+    min-height: 100vh;
+}
+
+.background-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: url('/static/bg.png') no-repeat center center fixed;
+    background-size: cover;
+    filter: brightness(0.4) blur(2px);
+    z-index: -1;
+}
+
+.glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.dashboard {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 3rem;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.logo h1 {
+    font-family: 'Outfit', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.logo span {
+    color: var(--accent-blue);
+}
+
+.logo-icon {
+    font-size: 1.25rem;
+    color: var(--accent-blue);
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    background-color: #ffd700;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #ffd700;
+}
+
+.connected .dot {
+    background-color: var(--accent-green);
+    box-shadow: 0 0 8px var(--accent-green);
+}
+
+/* Ticker Grid */
+.ticker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.ticker-card {
+    padding: 1.5rem;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.ticker-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--accent-blue);
+}
+
+.ticker-info {
+    margin-bottom: 1rem;
+}
+
+.ticker-symbol {
+    display: block;
+    font-size: 1.25rem;
+    font-weight: 700;
+    font-family: 'Outfit', sans-serif;
+}
+
+.ticker-exchange {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    letter-spacing: 1px;
+}
+
+.ticker-price {
+    font-size: 2rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.ticker-change {
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.price-up .ticker-price { color: var(--accent-green); }
+.price-down .ticker-price { color: var(--accent-red); }
+.change-up { color: var(--accent-green); }
+.change-down { color: var(--accent-red); }
+
+/* Activity Log */
+.activity-log {
+    padding: 1.5rem;
+}
+
+.activity-log h2 {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+#log-container {
+    height: 150px;
+    overflow-y: auto;
+    font-family: 'Inter', monospace;
+    font-size: 0.8125rem;
+}
+
+.log-entry {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+/* Auth Overlay */
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+}
+
+.auth-card {
+    padding: 3rem;
+    text-align: center;
+    max-width: 400px;
+}
+
+.auth-card h1 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+.auth-card p {
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+}
+
+.btn {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color 0.2s;
+}
+
+.btn-primary {
+    background-color: var(--accent-blue);
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #0052cc;
+}
+
+.hidden {
+    display: none;
+}

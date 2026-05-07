@@ -1,0 +1,10 @@
+pytest
+pytest-mock
+python-dotenv
+upstox-python-sdk
+requests
+protobuf
+websockets
+fastapi
+uvicorn
+jinja2

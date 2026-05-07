@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox Live Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-overlay"></div>
+
+    <div id="auth-overlay" class="overlay hidden">
+        <div class="glass-card auth-card">
+            <h1>Welcome Back</h1>
+            <p>Please authenticate with Upstox to access your live trading dashboard.</p>
+            <a href="/login" class="btn btn-primary">Connect Upstox</a>
+        </div>
+    </div>
+
+    <main class="dashboard">
+        <header>
+            <div class="logo">
+                <span class="logo-icon">▲</span>
+                <h1>Upstox<span>Bot</span></h1>
+            </div>
+            <div id="status" class="status-indicator">
+                <span class="dot"></span>
+                <span class="status-text">Connecting...</span>
+            </div>
+        </header>
+
+        <section class="ticker-grid">
+            <div class="ticker-card glass-card" id="card-RELIANCE">
+                <div class="ticker-info">
+                    <span class="ticker-symbol">RELIANCE</span>
+                    <span class="ticker-exchange">NSE_EQ</span>
+                </div>
+                <div class="ticker-values">
+                    <div class="ticker-price">--</div>
+                    <div class="ticker-change">--</div>
+                </div>
+            </div>
+            <div class="ticker-card glass-card" id="card-HDFCBANK">
+                <div class="ticker-info">
+                    <span class="ticker-symbol">HDFC BANK</span>
+                    <span class="ticker-exchange">NSE_EQ</span>
+                </div>
+                <div class="ticker-values">
+                    <div class="ticker-price">--</div>
+                    <div class="ticker-change">--</div>
+                </div>
+            </div>
+            <div class="ticker-card glass-card" id="card-TCS">
+                <div class="ticker-info">
+                    <span class="ticker-symbol">TCS</span>
+                    <span class="ticker-exchange">NSE_EQ</span>
+                </div>
+                <div class="ticker-values">
+                    <div class="ticker-price">--</div>
+                    <div class="ticker-change">--</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="activity-log glass-card">
+            <h2>Live Feed Activity</h2>
+            <div id="log-container">
+                <p class="log-entry">System initialized. Waiting for connection...</p>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
