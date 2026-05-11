@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  trading_bot:
+    build: .
+    container_name: trading_bot
+    ports:
+      - "5001:8000"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    tty: true
+    restart: unless-stopped

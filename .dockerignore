@@ -1,0 +1,20 @@
+# Local configuration
+.env
+.env.*
+.secrets.baseline
+.git/
+.pre-commit-config.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Database
+data/
+*.db
+*.sqlite
+
+# Logs
+*.log
