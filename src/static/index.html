@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upstox Live Ticks</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <h1>Trading Dashboard</h1>
+        
+        <div id="auth-container">
+            <p>Connect your account to start receiving live market updates.</p>
+            <a href="/auth/login" class="btn-connect">Connect to Upstox</a>
+        </div>
+
+        <div id="dashboard-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>LTP</th>
+                        <th>Change %</th>
+                        <th>Last Tick Time</th>
+                    </tr>
+                </thead>
+                <tbody id="ticks-body">
+                    <!-- Ticks will be dynamically inserted here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
