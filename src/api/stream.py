@@ -11,8 +11,32 @@ router = APIRouter()
 active_clients = []
 logger.info(f"Stream module initialized (id: {id(active_clients)})")
 
+_LOGGED_TICK_SAMPLE = False  # one-shot diagnostic; flipped after the first tick is logged
+
+
+def _sanitize_tick(tick_data) -> dict:
+    """Best-effort JSON-safe conversion. Upstox V3 protobuf-decoded payloads can
+    include bytes/enum/non-dict types that json.dumps refuses. We coerce to str
+    on anything it can't handle, and recurse through dicts/lists."""
+    if isinstance(tick_data, dict):
+        return {str(k): _sanitize_tick(v) for k, v in tick_data.items()}
+    if isinstance(tick_data, (list, tuple)):
+        return [_sanitize_tick(x) for x in tick_data]
+    if isinstance(tick_data, (str, int, float, bool)) or tick_data is None:
+        return tick_data
+    if isinstance(tick_data, bytes):
+        try:
+            return tick_data.decode("utf-8", errors="replace")
+        except Exception:
+            return repr(tick_data)
+    # Enums, custom proto types, etc.
+    return str(tick_data)
+
+
 async def tick_event_generator(request: Request, queue: asyncio.Queue):
-    """Generator that yields tick data from a per-client queue."""
+    """Generator that yields tick data from a per-client queue. Tolerant of
+    serialization errors — one bad tick must NOT close the SSE."""
+    global _LOGGED_TICK_SAMPLE
     try:
         while True:
             if await request.is_disconnected():
@@ -21,7 +45,27 @@ async def tick_event_generator(request: Request, queue: asyncio.Queue):
             try:
                 # Wait for data with a timeout to check for disconnection
                 tick_data = await asyncio.wait_for(queue.get(), timeout=1.0)
-                yield f"data: {json.dumps(tick_data)}\n\n"
+
+                # First tick after restart: log its type/keys so we know what we got.
+                if not _LOGGED_TICK_SAMPLE:
+                    logger.info(
+                        f"First tick on SSE pipe: type={type(tick_data).__name__} "
+                        f"keys={list(tick_data.keys()) if isinstance(tick_data, dict) else 'n/a'}"
+                    )
+                    _LOGGED_TICK_SAMPLE = True
+
+                try:
+                    payload = json.dumps(tick_data)
+                except (TypeError, ValueError) as e:
+                    # Fall back to sanitised serialisation. Don't kill the SSE
+                    # because one tick had a weird field.
+                    logger.warning(
+                        f"Tick not directly JSON-serializable ({type(e).__name__}: {e}); "
+                        f"falling back to sanitised payload"
+                    )
+                    payload = json.dumps(_sanitize_tick(tick_data))
+
+                yield f"data: {payload}\n\n"
                 queue.task_done()
             except asyncio.TimeoutError:
                 continue

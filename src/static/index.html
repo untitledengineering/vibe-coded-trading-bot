@@ -3,34 +3,246 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upstox Live Ticks</title>
+    <title>Trading Bot</title>
+    <link rel="icon" type="image/png" href="/static/favicon.png">
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <h1>Trading Dashboard</h1>
-        
-        <div id="auth-container">
-            <p>Connect your account to start receiving live market updates.</p>
-            <a href="/auth/login" class="btn-connect">Connect to Upstox</a>
+    <div class="page">
+        <header class="topbar">
+            <div class="brand">
+                <span class="logo-dot"></span>
+                <span class="brand-name">trading bot</span>
+            </div>
+            <div class="topbar-right">
+                <span id="ist-clock" class="mono muted">—:—:— IST</span>
+                <span class="dot-sep">•</span>
+                <span id="market-status" class="muted">market…</span>
+            </div>
+        </header>
+
+        <!-- HERO: today's P&L (always visible) -->
+        <section class="hero" id="hero">
+            <div class="hero-headline">
+                <span class="hero-label">P&amp;L today</span>
+                <span id="pnl-hero" class="pnl-big mono">—</span>
+                <span id="pnl-delta" class="pnl-delta muted">—</span>
+            </div>
+            <div class="hero-meta">
+                <div class="meta-item">
+                    <span class="meta-label">trades</span>
+                    <span id="trades-count" class="meta-value mono">—</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">win / loss</span>
+                    <span id="win-loss" class="meta-value mono">— / —</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">open</span>
+                    <span id="open-count" class="meta-value mono">—</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">costs est.</span>
+                    <span id="costs-est" class="meta-value mono">—</span>
+                </div>
+            </div>
+            <div class="hero-spark">
+                <svg id="spark-svg" viewBox="0 0 200 50" preserveAspectRatio="none" aria-hidden="true">
+                    <path id="spark-path" d=""></path>
+                </svg>
+            </div>
+            <div class="hero-actions">
+                <button id="btn-halt" class="btn btn-warn" type="button">Halt</button>
+                <button id="btn-resume" class="btn btn-ghost hidden" type="button">Resume</button>
+                <button id="btn-report" class="btn btn-ghost" type="button">EOD report</button>
+            </div>
+        </section>
+
+        <!-- STATUS STRIP: always visible -->
+        <section class="status-strip">
+            <div class="status-item">
+                <span id="orb-engine" class="orb"></span>
+                <div class="status-text">
+                    <span class="status-label">engine</span>
+                    <span id="engine-detail" class="status-value">—</span>
+                </div>
+            </div>
+            <div class="status-item">
+                <span id="orb-stream" class="orb"></span>
+                <div class="status-text">
+                    <span class="status-label">stream</span>
+                    <span id="stream-detail" class="status-value">—</span>
+                </div>
+            </div>
+            <div class="status-item">
+                <span id="orb-auth" class="orb"></span>
+                <div class="status-text">
+                    <span class="status-label">oauth</span>
+                    <span id="auth-detail" class="status-value">—</span>
+                </div>
+                <div class="status-actions">
+                    <a id="btn-connect" href="/auth/login" class="btn btn-small">Connect</a>
+                    <button id="btn-logout" class="btn btn-small btn-ghost hidden" type="button">Sign out</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB BAR -->
+        <nav class="tab-bar" role="tablist">
+            <button class="tab-btn active" data-tab="live" role="tab">Live</button>
+            <button class="tab-btn" data-tab="trades" role="tab">Trades</button>
+            <button class="tab-btn" data-tab="scanner" role="tab">Scanner</button>
+            <button class="tab-btn" data-tab="news" role="tab">News</button>
+            <button class="tab-btn" data-tab="signals" role="tab">Signals</button>
+            <button class="tab-btn" data-tab="risk" role="tab">Risk</button>
+        </nav>
+
+        <!-- TAB: LIVE -->
+        <div id="tab-live" class="tab-content" role="tabpanel">
+            <section class="section">
+                <header class="section-head">
+                    <h2>Open positions</h2>
+                    <span id="open-count-badge" class="badge muted">0</span>
+                </header>
+                <div id="positions-grid" class="positions-grid">
+                    <div class="empty">No open positions.</div>
+                </div>
+            </section>
         </div>
 
-        <div id="dashboard-container">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                        <th>LTP</th>
-                        <th>Change %</th>
-                        <th>Last Tick Time</th>
-                    </tr>
-                </thead>
-                <tbody id="ticks-body">
-                    <!-- Ticks will be dynamically inserted here -->
-                </tbody>
-            </table>
+        <!-- TAB: TRADES -->
+        <div id="tab-trades" class="tab-content hidden" role="tabpanel">
+            <section class="section">
+                <header class="section-head">
+                    <h2>Today's trades</h2>
+                    <span id="trades-count-badge" class="badge muted">0</span>
+                </header>
+                <div id="trades-list" class="trades-list">
+                    <div class="empty">No trades closed today.</div>
+                </div>
+            </section>
         </div>
+
+        <!-- TAB: SCANNER -->
+        <div id="tab-scanner" class="tab-content hidden" role="tabpanel">
+            <div class="scanner-controls">
+                <span class="section-head-label">Window</span>
+                <div class="window-btns">
+                    <button class="window-btn active" data-window="15">15 min</button>
+                    <button class="window-btn" data-window="60">1 hour</button>
+                </div>
+                <span id="scanner-updated" class="muted" style="margin-left:auto;font-size:0.78rem;">—</span>
+            </div>
+            <div class="scanner-grid">
+                <div class="scanner-col">
+                    <header class="section-head">
+                        <h2>Top gainers</h2>
+                        <span class="badge gain">▲</span>
+                    </header>
+                    <div id="gainers-list" class="scanner-list">
+                        <div class="empty">No data yet.</div>
+                    </div>
+                </div>
+                <div class="scanner-col">
+                    <header class="section-head">
+                        <h2>Top losers</h2>
+                        <span class="badge loss">▼</span>
+                    </header>
+                    <div id="losers-list" class="scanner-list">
+                        <div class="empty">No data yet.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: NEWS -->
+        <div id="tab-news" class="tab-content hidden" role="tabpanel">
+            <div class="section-head" style="margin-top:0.5rem;">
+                <h2>News feed</h2>
+                <span id="market-sentiment-badge" class="badge muted">market sentiment —</span>
+                <span id="news-updated" class="muted" style="margin-left:auto;font-size:0.78rem;">—</span>
+            </div>
+            <div id="news-list" class="news-list">
+                <div class="empty">No recent news.</div>
+            </div>
+        </div>
+
+        <!-- TAB: SIGNALS -->
+        <div id="tab-signals" class="tab-content hidden" role="tabpanel">
+            <div class="section-head" style="margin-top:0.5rem;">
+                <h2>Model signals</h2>
+                <span id="signals-model-badge" class="badge muted">—</span>
+                <span id="signals-updated" class="muted" style="margin-left:auto;font-size:0.78rem;">—</span>
+            </div>
+            <div class="signals-grid">
+                <div class="signals-col">
+                    <div class="signals-col-label up">Bullish picks</div>
+                    <div id="signals-bullish" class="signals-list">
+                        <div class="empty">No signals yet.</div>
+                    </div>
+                </div>
+                <div class="signals-col">
+                    <div class="signals-col-label down">Bearish picks</div>
+                    <div id="signals-bearish" class="signals-list">
+                        <div class="empty">No signals yet.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: RISK -->
+        <div id="tab-risk" class="tab-content hidden" role="tabpanel">
+            <div class="risk-grid">
+                <div class="risk-card">
+                    <div class="risk-card-title">Session</div>
+                    <div class="risk-stats">
+                        <div class="risk-row"><span>Model</span><span id="risk-model" class="mono">—</span></div>
+                        <div class="risk-row"><span>Cycles run</span><span id="risk-cycles" class="mono">—</span></div>
+                        <div class="risk-row"><span>Trades today</span><span id="risk-trades" class="mono">—</span></div>
+                        <div class="risk-row"><span>Win rate</span><span id="risk-winrate" class="mono">—</span></div>
+                        <div class="risk-row"><span>Avg P&L per trade</span><span id="risk-avg-pnl" class="mono">—</span></div>
+                        <div class="risk-row"><span>Best trade</span><span id="risk-best" class="mono">—</span></div>
+                        <div class="risk-row"><span>Worst trade</span><span id="risk-worst" class="mono">—</span></div>
+                    </div>
+                </div>
+                <div class="risk-card">
+                    <div class="risk-card-title">Costs &amp; Charges</div>
+                    <div class="risk-stats">
+                        <div class="risk-row"><span>Gross P&L</span><span id="risk-gross" class="mono">—</span></div>
+                        <div class="risk-row"><span>Net P&L (after costs)</span><span id="risk-net" class="mono">—</span></div>
+                        <div class="risk-row"><span>Est. costs + slippage</span><span id="risk-costs" class="mono">—</span></div>
+                        <div class="risk-row muted-row"><span style="font-size:0.75rem">5 bps slippage per leg</span><span></span></div>
+                        <div class="risk-row muted-row"><span style="font-size:0.75rem">Min(₹20, 0.05%) brokerage</span><span></span></div>
+                        <div class="risk-row muted-row"><span style="font-size:0.75rem">STT 0.025% sell-side</span><span></span></div>
+                    </div>
+                </div>
+                <div class="risk-card">
+                    <div class="risk-card-title">Diversification</div>
+                    <div class="risk-stats">
+                        <div class="risk-row"><span>Concurrent positions</span><span id="risk-open" class="mono">—</span></div>
+                        <div class="risk-row"><span>Distinct symbols today</span><span id="risk-symbols" class="mono">—</span></div>
+                        <div class="risk-row"><span>Exits by stop-loss</span><span id="risk-sl-exits" class="mono">—</span></div>
+                        <div class="risk-row"><span>Exits by target</span><span id="risk-tp-exits" class="mono">—</span></div>
+                        <div class="risk-row"><span>Exits by EOD</span><span id="risk-eod-exits" class="mono">—</span></div>
+                    </div>
+                </div>
+                <div class="risk-card">
+                    <div class="risk-card-title">Skip reasons (last cycle)</div>
+                    <div id="risk-skips" class="risk-stats">
+                        <div class="empty" style="padding:1rem;">No data.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <span class="muted mono">model · <span id="footer-model">—</span></span>
+            <span class="muted mono">cycles · <span id="footer-cycles">—</span></span>
+            <span id="halt-banner" class="halt-banner hidden">HALTED · <span id="halt-reason"></span></span>
+        </footer>
     </div>
     <script src="/static/app.js"></script>
 </body>

@@ -18,3 +18,12 @@ data/
 
 # Logs
 *.log
+
+# Tests / cache
+tests/
+.pytest_cache/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store

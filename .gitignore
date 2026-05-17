@@ -23,5 +23,6 @@ data/
 .idea/
 .DS_Store
 
-# Secrets baseline
-.secrets.baseline
+# Tooling
+.pytest_cache/
+.pre-commit-config.yaml.bak

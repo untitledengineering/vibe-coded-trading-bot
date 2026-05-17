@@ -1,6 +1,6 @@
 import upstox_client
 import asyncio
-from typing import List, Dict, Any, Callable
+from typing import Any, Callable, List
 from src.utils.logger import logger
 
 class UpstoxWebsocketClient:
@@ -25,6 +25,13 @@ class UpstoxWebsocketClient:
                 instrumentKeys=self.instrument_keys,
                 mode='ltpc'
             )
+            # Aggressive auto-reconnect so an overnight network drop self-heals
+            # when connectivity returns. retry_count is huge so we'll keep
+            # retrying through a Mac sleep / Wi-Fi outage of any plausible length.
+            # 401 errors short-circuit reconnect inside the SDK (correct — needs
+            # a fresh OAuth) and our streamer_manager's health monitor catches
+            # the rare case where the SDK's reconnect loop gives up entirely.
+            self.streamer.auto_reconnect(enable=True, interval=5, retry_count=9999)
 
             self.streamer.on('open', self._on_open)
             self.streamer.on('message', self._on_message)
@@ -44,10 +51,14 @@ class UpstoxWebsocketClient:
             logger.info("Streamer disconnected")
 
     def _on_open(self) -> None:
-        """Handle connection open event."""
+        """Handle connection open event.
+
+        Subscription is handled by the SDK's `subscribe_to_initial_keys` (driven by
+        the `instrumentKeys=` we pass to the constructor). Calling `subscribe()`
+        again here sends a second SUBSCRIBE frame which Upstox treats as a state
+        reset — verified empirically: standalone SDK probe got 126 ticks in 25s,
+        wrapper-with-double-subscribe got 2 messages then silence."""
         logger.info("Upstox Streamer Connection Opened")
-        if self.streamer:
-            self.streamer.subscribe(self.instrument_keys, 'ltpc')
 
     def _on_message(self, data: Any) -> None:
         """Handle incoming tick data and broadcast to all clients."""

@@ -39,7 +39,23 @@ def test_websocket_disconnect(mocker):
     mock_streamer = mocker.Mock()
     client = UpstoxWebsocketClient(api_client=mocker.Mock(), instrument_keys=[], broadcast_callback=mocker.Mock())
     client.streamer = mock_streamer
-    
+
     client.disconnect()
-    
+
     mock_streamer.disconnect.assert_called_once()
+
+
+def test_on_open_does_not_resubscribe(mocker):
+    """Regression: calling streamer.subscribe() from _on_open caused Upstox to
+    drop the stream after the first snapshot. Empirically reproduced 2026-05-15.
+    Subscription is handled by the SDK via the constructor's instrumentKeys
+    argument — _on_open must NOT re-subscribe."""
+    mock_streamer = mocker.Mock()
+    client = UpstoxWebsocketClient(
+        api_client=mocker.Mock(),
+        instrument_keys=["NSE_EQ|TEST"],
+        broadcast_callback=mocker.Mock(),
+    )
+    client.streamer = mock_streamer
+    client._on_open()
+    mock_streamer.subscribe.assert_not_called()

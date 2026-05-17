@@ -16,15 +16,18 @@ class UpstoxRestClient:
         self.order_api = order_api.OrderApi(self.api_client)
         self.login_api = login_api.LoginApi(self.api_client)
 
-    def get_authorize_url(self) -> str:
-        """Construct the Upstox authorization URL."""
+    def get_authorize_url(self, state: str | None = None) -> str:
+        """Construct the Upstox authorization URL, optionally including a CSRF state."""
         import urllib.parse
         encoded_redirect = urllib.parse.quote(UPSTOX_REDIRECT_URI, safe='')
-        return (
+        url = (
             f"https://api.upstox.com/v2/login/authorization/dialog"
             f"?response_type=code&client_id={UPSTOX_API_KEY}"
             f"&redirect_uri={encoded_redirect}"
         )
+        if state:
+            url += f"&state={urllib.parse.quote(state, safe='')}"
+        return url
 
     async def exchange_code_for_token(self, code: str) -> str:
         """Exchange the authorization code for an access token."""
