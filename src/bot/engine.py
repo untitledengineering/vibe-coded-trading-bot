@@ -51,6 +51,9 @@ class EngineConfig:
     # or above +threshold to veto shorts. 0.0 disables the veto entirely.
     sentiment_veto_threshold: float = 0.3
 
+    # Invert model signals: place short when model says long, and vice versa.
+    invert_signals: bool = False
+
 
 @dataclass(frozen=True)
 class OrderIntent:
@@ -132,6 +135,13 @@ def _todays_trade_counts(
     return counts
 
 
+def _cost_floor_inr(notional: float) -> float:
+    """Minimum round-trip hard cost: 2 × max(₹20, 0.05% of notional) + STT."""
+    brokerage_per_leg = max(20.0, 0.0005 * notional)
+    stt = 0.00025 * notional  # 0.025% sell-side
+    return brokerage_per_leg * 2 + stt
+
+
 def decide(
     features_at_minute: pd.DataFrame,
     model: ModelArtifact,
@@ -140,6 +150,8 @@ def decide(
     now_ts: int,
     closed_positions: Optional[List[Position]] = None,
     sentiment_scores: Optional[Dict[str, float]] = None,
+    allow_longs: bool = True,
+    allow_shorts: bool = True,
 ) -> EngineCycleResult:
     """One decision cycle.
 
@@ -231,6 +243,13 @@ def decide(
     sent = sentiment_scores or {}
     veto = config.sentiment_veto_threshold
 
+    if not allow_longs:
+        result.skip("regime_bearish_longs_suppressed")
+        eligible_long = eligible_long.iloc[0:0]
+    if not allow_shorts:
+        result.skip("regime_bullish_shorts_suppressed")
+        eligible_short = eligible_short.iloc[0:0]
+
     longs_taken = 0
     shorts_taken = 0
     for _, row in eligible_long.iterrows():
@@ -248,7 +267,7 @@ def decide(
         result.add(
             OrderIntent(
                 instrument_key=sym,
-                side="long",
+                side="short" if config.invert_signals else "long",
                 qty=qty,
                 reason="long_top_pick",
                 predicted_return=float(row["pred"]),
@@ -271,7 +290,7 @@ def decide(
         result.add(
             OrderIntent(
                 instrument_key=sym,
-                side="short",
+                side="long" if config.invert_signals else "short",
                 qty=qty,
                 reason="short_bottom_pick",
                 predicted_return=float(row["pred"]),

@@ -8,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 
 from src.api import auth, paper as paper_router, stream, streamer_manager
+from src.api import market as market_api
+from src.api import stock as stock_api
 from src.data.news import market_news_loop
 from src.db.database import init_db, get_valid_token
 from src.features.sentiment import get_default_scorer, score_unscored_news
@@ -46,7 +48,7 @@ async def _sentiment_scoring_loop(interval_seconds: int = 300) -> None:
     logger.info(f"Sentiment scorer ready ({scorer.model_name}), interval={interval_seconds}s")
     while True:
         try:
-            n = await score_unscored_news(scorer, limit=50)
+            n = await score_unscored_news(scorer, limit=30, concurrency=2)
             if n:
                 logger.info(f"Sentiment: scored {n} new headlines")
         except asyncio.CancelledError:
@@ -104,6 +106,8 @@ app.mount("/static", StaticFiles(directory="src/static"), name="static")
 app.include_router(auth.router)
 app.include_router(stream.router)
 app.include_router(paper_router.router)
+app.include_router(market_api.router)
+app.include_router(stock_api.router)
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():

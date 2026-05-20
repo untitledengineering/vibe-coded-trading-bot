@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Detail</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    body { background: var(--bg); color: var(--text-primary); font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
+    :root { --text-primary: var(--text); --gain: var(--green); --loss: var(--red); }
+    .stock-page { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem; }
+    .stock-header { display: flex; align-items: baseline; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .stock-symbol { font-size: 1.8rem; font-weight: 800; }
+    .stock-name { font-size: 0.9rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .stock-ltp { font-size: 2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .stock-chg { font-size: 1.1rem; font-weight: 600; font-family: 'JetBrains Mono', monospace; margin-top: 0.2rem; }
+    .stock-chg.up { color: var(--green); }
+    .stock-chg.down { color: var(--red); }
+    .stock-meta { display: flex; gap: 1.5rem; font-size: 0.82rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-bottom: 1rem; flex-wrap: wrap; }
+    .range-bar { display: flex; gap: 0.4rem; margin-bottom: 0.75rem; }
+    .range-btn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; padding: 0.3rem 0.75rem; font-size: 0.8rem; cursor: pointer; font-family: 'Inter', sans-serif; }
+    .range-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    #chart-container { width: 100%; height: 380px; border-radius: 10px; overflow: hidden; margin-bottom: 1.5rem; background: var(--surface); border: 1px solid var(--border); }
+    .order-panel { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; }
+    .qty-label { font-size: 0.82rem; color: var(--text-muted); }
+    .qty-input { background: var(--surface); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; padding: 0.4rem 0.75rem; font-size: 0.9rem; width: 80px; font-family: 'JetBrains Mono', monospace; }
+    .btn-long-order { background: var(--green); color: #000; border: none; border-radius: 6px; padding: 0.45rem 1.2rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+    .btn-short-order { background: var(--red); color: #fff; border: none; border-radius: 6px; padding: 0.45rem 1.2rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+    .order-result { font-size: 0.82rem; color: var(--text-muted); }
+    .news-section h2 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; }
+    .news-item { padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
+    .news-item:last-child { border-bottom: none; }
+    .news-item-meta { display: flex; gap: 0.5rem; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem; flex-wrap: wrap; }
+    .news-item-headline { font-size: 0.88rem; line-height: 1.4; }
+    .news-item-headline a { color: var(--text-primary); text-decoration: none; }
+    .news-item-headline a:hover { color: var(--accent); }
+    .sent-pos { color: var(--green); }
+    .sent-neg { color: var(--red); }
+    .back-btn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; padding: 0.3rem 0.75rem; font-size: 0.8rem; cursor: pointer; margin-bottom: 1.25rem; display: inline-block; }
+    .back-btn:hover { color: var(--text-primary); }
+    .loading { color: var(--text-muted); font-size: 0.9rem; padding: 2rem 0; }
+    .chart-err { color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 4rem 0; }
+    .signal-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 1.25rem; }
+    .signal-top { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+    .signal-direction { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.03em; }
+    .signal-direction.green { color: var(--green); }
+    .signal-direction.red { color: var(--red); }
+    .signal-direction.muted { color: var(--text-muted); }
+    .signal-action { font-size: 0.82rem; color: var(--text-muted); }
+    .signal-score-wrap { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+    .signal-score-num { font-size: 1.4rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+    .signal-bar-track { width: 140px; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; position: relative; }
+    .signal-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
+    .signal-factors { display: flex; flex-direction: column; gap: 0.35rem; }
+    .signal-factor { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; }
+    .signal-factor-name { width: 110px; color: var(--text-muted); flex-shrink: 0; }
+    .signal-factor-bar { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; position: relative; }
+    .signal-factor-fill { height: 100%; border-radius: 3px; position: absolute; }
+    .signal-factor-detail { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+    .signal-ts { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.5rem; }
+    .fund-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.6rem; margin-bottom: 1rem; }
+    .fund-stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.8rem; }
+    .fund-stat-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.2rem; }
+    .fund-stat-value { font-size: 0.95rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .fund-summary { font-size: 0.85rem; line-height: 1.6; color: var(--text-muted); margin-bottom: 1rem; }
+    .fund-summary span.more { color: var(--accent); cursor: pointer; font-size: 0.8rem; margin-left: 0.3rem; }
+    .fund-section-title { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 0.9rem 0 0.5rem; }
+    .ownership-bar { height: 8px; border-radius: 4px; overflow: hidden; display: flex; margin-bottom: 0.4rem; }
+    .ownership-bar-promoter { background: var(--accent); }
+    .ownership-bar-inst { background: var(--green); }
+    .ownership-bar-public { background: var(--border); }
+    .ownership-legend { display: flex; gap: 1rem; font-size: 0.75rem; color: var(--text-muted); flex-wrap: wrap; }
+    .ownership-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+    .officer-list { display: flex; flex-direction: column; gap: 0.35rem; }
+    .officer-row { display: flex; gap: 0.5rem; font-size: 0.82rem; }
+    .officer-name { font-weight: 600; min-width: 180px; }
+    .officer-title { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+<div class="stock-page">
+  <button class="back-btn" onclick="window.close()">← Close</button>
+  <div class="stock-header">
+    <div>
+      <div class="stock-symbol" id="hdr-symbol">—</div>
+      <div class="stock-name"   id="hdr-name">—</div>
+    </div>
+    <div>
+      <div class="stock-ltp mono" id="hdr-ltp">—</div>
+      <div class="stock-chg"      id="hdr-chg">—</div>
+    </div>
+  </div>
+  <div class="stock-meta">
+    <span>O: <span id="meta-open">—</span></span>
+    <span>H: <span id="meta-high">—</span></span>
+    <span>L: <span id="meta-low">—</span></span>
+    <span>Prev: <span id="meta-prev">—</span></span>
+  </div>
+  <!-- Signal card -->
+  <div id="signal-card" class="signal-card" style="display:none;">
+    <div class="signal-top">
+      <div>
+        <div class="signal-direction" id="sig-direction">—</div>
+        <div class="signal-action" id="sig-action"></div>
+      </div>
+      <div class="signal-score-wrap">
+        <div>
+          <div style="font-size:0.65rem;color:var(--text-muted);text-align:right;margin-bottom:2px;">score</div>
+          <div class="signal-bar-track">
+            <div class="signal-bar-fill" id="sig-bar"></div>
+          </div>
+        </div>
+        <div class="signal-score-num" id="sig-score">—</div>
+      </div>
+    </div>
+    <div class="signal-factors" id="sig-factors"></div>
+    <div class="signal-ts" id="sig-ts"></div>
+  </div>
+
+  <div class="range-bar">
+    <button class="range-btn" data-range="1h">1H</button>
+    <button class="range-btn active" data-range="1d">1D</button>
+    <button class="range-btn" data-range="1w">1W</button>
+    <button class="range-btn" data-range="1m">1M</button>
+    <button class="range-btn" data-range="1y">1Y</button>
+  </div>
+  <div id="chart-container"></div>
+  <div class="order-panel">
+    <span class="qty-label">Qty</span>
+    <input type="number" id="order-qty" class="qty-input" value="1" min="1">
+    <button id="btn-long"  class="btn-long-order">Long ▲</button>
+    <button id="btn-short" class="btn-short-order">Short ▼</button>
+    <span id="order-result" class="order-result"></span>
+  </div>
+  <!-- Company profile section -->
+  <div id="company-section" style="margin-bottom:2rem;">
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.9rem;">
+      <h2 style="font-size:1rem;font-weight:700;margin:0;">About</h2>
+      <span id="company-sector" style="font-size:0.72rem;font-weight:600;padding:0.15rem 0.55rem;border-radius:4px;background:var(--accent-bg);color:var(--accent);display:none;"></span>
+    </div>
+    <div id="company-body"><div class="loading">Loading company info…</div></div>
+  </div>
+
+  <div class="news-section">
+    <h2>News &amp; sentiment</h2>
+    <div id="news-container"><div class="loading">Loading news…</div></div>
+  </div>
+</div>
+
+<!-- Related scripts modal -->
+<div id="news-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);backdrop-filter:blur(3px);align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.5rem;width:min(560px,94vw);max-height:85vh;overflow-y:auto;display:flex;flex-direction:column;gap:1rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Related scripts</span>
+      <button id="modal-close" style="background:none;border:none;color:var(--text-muted);font-size:1.1rem;cursor:pointer;padding:0.1rem 0.4rem;">✕</button>
+    </div>
+    <div id="modal-article"></div>
+    <div id="modal-stocks"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // ── URL params ───────────────────────────────────────────────────────────
+  const params = new URLSearchParams(location.search);
+  const KEY    = params.get("key")    || "";
+  const SYMBOL = params.get("symbol") || KEY;
+  const NAME   = params.get("name")   || SYMBOL;
+
+  document.title = SYMBOL ? SYMBOL + " — Trading Bot" : "Stock Detail";
+  document.getElementById("hdr-symbol").textContent = SYMBOL || "—";
+  document.getElementById("hdr-name").textContent   = NAME   || "—";
+
+  if (!KEY) {
+    document.getElementById("chart-container").innerHTML =
+      '<div class="chart-err">No instrument key provided.</div>';
+    return;
+  }
+
+  // ── Lightweight Charts v3 (UMD global) ──────────────────────────────────
+  const chartContainer = document.getElementById("chart-container");
+  const chart = LightweightCharts.createChart(chartContainer, {
+    layout:    { backgroundColor: "transparent", textColor: "#9ca3af" },
+    grid:      { vertLines: { color: "#1f2937" }, horzLines: { color: "#1f2937" } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    timeScale: { timeVisible: true, secondsVisible: false },
+    width:     chartContainer.offsetWidth,
+    height:    380,
+  });
+  const candleSeries = chart.addCandlestickSeries({
+    upColor:        "#4ade80",
+    downColor:      "#f87171",
+    borderUpColor:  "#4ade80",
+    borderDownColor:"#f87171",
+    wickUpColor:    "#4ade80",
+    wickDownColor:  "#f87171",
+  });
+  window.addEventListener("resize", function () {
+    chart.applyOptions({ width: chartContainer.offsetWidth });
+  });
+
+  // ── Info ─────────────────────────────────────────────────────────────────
+  async function loadInfo() {
+    try {
+      const r = await fetch("/stock/" + encodeURIComponent(KEY) + "/info");
+      if (!r.ok) return;
+      const d = await r.json();
+      const ltpEl = document.getElementById("hdr-ltp");
+      const chgEl = document.getElementById("hdr-chg");
+      ltpEl.textContent = d.ltp != null ? "₹" + d.ltp.toFixed(2) : "—";
+      const pct = d.change_pct;
+      if (pct != null) {
+        chgEl.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
+        chgEl.className   = "stock-chg " + (pct >= 0 ? "up" : "down");
+      }
+      document.getElementById("meta-open").textContent = d.open  != null ? d.open.toFixed(2)       : "—";
+      document.getElementById("meta-high").textContent = d.high  != null ? d.high.toFixed(2)       : "—";
+      document.getElementById("meta-low").textContent  = d.low   != null ? d.low.toFixed(2)        : "—";
+      document.getElementById("meta-prev").textContent = d.prev_close != null ? d.prev_close.toFixed(2) : "—";
+      // Update symbol/name if server returned better values
+      if (d.trading_symbol) document.getElementById("hdr-symbol").textContent = d.trading_symbol;
+      if (d.name)           document.getElementById("hdr-name").textContent   = d.name;
+      document.title = (d.trading_symbol || SYMBOL) + " — Trading Bot";
+      // Auto qty from ₹12,500 cap
+      if (d.ltp && d.ltp > 0) {
+        document.getElementById("order-qty").value = Math.max(1, Math.floor(12500 / d.ltp));
+      }
+    } catch (e) { console.warn("info fetch failed", e); }
+  }
+
+  // ── Candles ──────────────────────────────────────────────────────────────
+  async function loadCandles(range) {
+    try {
+      const r = await fetch("/stock/" + encodeURIComponent(KEY) + "/candles?range=" + range);
+      if (!r.ok) { console.warn("candles", r.status, await r.text()); return; }
+      const d = await r.json();
+      const IST_OFFSET = 19800; // UTC+5:30 in seconds
+      const candles = (d.candles || []).map(function (c) {
+        return { time: c.time + IST_OFFSET, open: c.open, high: c.high, low: c.low, close: c.close };
+      });
+      if (candles.length) {
+        candleSeries.setData(candles);
+        chart.timeScale().fitContent();
+      } else {
+        chartContainer.insertAdjacentHTML("afterbegin",
+          '<div class="chart-err" style="position:absolute;width:100%">No candle data for this range.</div>');
+      }
+    } catch (e) { console.warn("candles fetch failed", e); }
+  }
+
+  document.querySelectorAll(".range-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".range-btn").forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      loadCandles(btn.dataset.range);
+    });
+  });
+
+  // ── News ─────────────────────────────────────────────────────────────────
+  async function loadNews() {
+    const el = document.getElementById("news-container");
+    try {
+      const r = await fetch("/stock/" + encodeURIComponent(KEY) + "/news?limit=30");
+      if (!r.ok) throw new Error(r.status);
+      const d = await r.json();
+      if (!d.news || d.news.length === 0) {
+        el.innerHTML = '<div class="loading">No news found.</div>';
+        return;
+      }
+      el.innerHTML = "";
+      d.news.forEach(function (n) {
+        var div = document.createElement("div");
+        div.className = "news-item";
+        div.style.cursor = "pointer";
+        var sc = n.sentiment_score;
+        var sentHtml = sc != null
+          ? '<span class="' + (sc > 0.3 ? "sent-pos" : sc < -0.3 ? "sent-neg" : "") + '">' +
+            (sc > 0 ? "+" : "") + sc.toFixed(2) + "</span>"
+          : "";
+        var time = n.published_at
+          ? new Date(n.published_at * 1000).toLocaleString("en-IN", {
+              timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit",
+              month: "short", day: "numeric"
+            })
+          : "";
+        var headline = n.url
+          ? '<a href="' + n.url + '" target="_blank" rel="noopener">' + n.headline + "</a>"
+          : n.headline;
+        div.innerHTML =
+          '<div class="news-item-meta"><span>' + time + "</span><span>" +
+          (n.source || "") + "</span>" + sentHtml +
+          '<span style="margin-left:auto;font-size:0.7rem;opacity:0.5">scripts →</span></div>' +
+          '<div class="news-item-headline">' + headline + "</div>";
+        div.addEventListener("click", function (e) {
+          if (e.target.tagName === "A") return;
+          openStockNewsModal(n);
+        });
+        el.appendChild(div);
+      });
+    } catch (e) {
+      el.innerHTML = '<div class="loading">Failed to load news.</div>';
+    }
+  }
+
+  // ── Orders ────────────────────────────────────────────────────────────────
+  async function placeOrder(side) {
+    const qty = parseInt(document.getElementById("order-qty").value, 10) || 1;
+    const resultEl = document.getElementById("order-result");
+    resultEl.textContent = "Placing…";
+    resultEl.style.color = "var(--text-muted)";
+    try {
+      const r = await fetch(
+        "/paper/force-entry?instrument_key=" + encodeURIComponent(KEY) +
+        "&side=" + side + "&qty=" + qty,
+        { method: "POST" }
+      );
+      const d = await r.json();
+      if (d.ok) {
+        resultEl.textContent = "✓ " + side + " " + qty + " @ ₹" + d.entry_price.toFixed(2);
+        resultEl.style.color = "var(--green)";
+      } else {
+        resultEl.textContent = d.error || "Failed";
+        resultEl.style.color = "var(--red)";
+      }
+    } catch (e) {
+      resultEl.textContent = "Network error";
+      resultEl.style.color = "var(--red)";
+    }
+  }
+
+  document.getElementById("btn-long").addEventListener("click",  function () { placeOrder("long"); });
+  document.getElementById("btn-short").addEventListener("click", function () { placeOrder("short"); });
+
+  // ── Signal ───────────────────────────────────────────────────────────────
+  async function loadSignal() {
+    try {
+      var r = await fetch("/stock/" + encodeURIComponent(KEY) + "/signal");
+      if (!r.ok) return;
+      var d = await r.json();
+
+      var card = document.getElementById("signal-card");
+      card.style.display = "block";
+
+      // Direction + colour
+      var dirEl = document.getElementById("sig-direction");
+      dirEl.textContent = d.direction;
+      dirEl.className   = "signal-direction " + (d.color || "muted");
+      document.getElementById("sig-action").textContent = d.action;
+
+      // Score number
+      var score = d.score;
+      var scoreEl = document.getElementById("sig-score");
+      scoreEl.textContent = (score >= 0 ? "+" : "") + score.toFixed(1);
+      scoreEl.style.color = score >= 1.5 ? "var(--green)" : score <= -1.5 ? "var(--red)" : "var(--text-muted)";
+
+      // Score bar: score is -5 to +5; centre at 50%
+      var pct  = Math.round((score + 5) / 10 * 100);
+      var fill = document.getElementById("sig-bar");
+      var mid  = 50;
+      if (pct >= mid) {
+        fill.style.left      = mid + "%";
+        fill.style.width     = (pct - mid) + "%";
+        fill.style.background = "var(--green)";
+      } else {
+        fill.style.left      = pct + "%";
+        fill.style.width     = (mid - pct) + "%";
+        fill.style.background = "var(--red)";
+      }
+      fill.style.position = "absolute";
+
+      // Factor rows
+      var facEl = document.getElementById("sig-factors");
+      facEl.innerHTML = "";
+      (d.factors || []).forEach(function (f) {
+        var row = document.createElement("div");
+        row.className = "signal-factor";
+        var fs = f.score;
+        var barPct  = Math.round((fs + 3) / 6 * 100);
+        var barMid  = 50;
+        var barLeft, barW, barColor;
+        if (barPct >= barMid) {
+          barLeft = barMid; barW = barPct - barMid; barColor = "var(--green)";
+        } else {
+          barLeft = barPct; barW = barMid - barPct; barColor = "var(--red)";
+        }
+        row.innerHTML =
+          '<span class="signal-factor-name">' + (f.icon || "") + " " + f.name + '</span>' +
+          '<div class="signal-factor-bar">' +
+            '<div class="signal-factor-fill" style="left:' + barLeft + '%;width:' + barW + '%;background:' + barColor + ';"></div>' +
+          '</div>' +
+          '<span class="signal-factor-detail">' + (f.detail || "") + '</span>';
+        facEl.appendChild(row);
+      });
+
+      // Timestamp
+      if (d.computed_at) {
+        var ago = Math.round((Date.now() / 1000 - d.computed_at));
+        document.getElementById("sig-ts").textContent =
+          "Updated " + (ago < 60 ? ago + "s ago" : Math.round(ago / 60) + "m ago") +
+          (d.has_model ? "  ·  ML model active" : "  ·  Technical only") +
+          "  ·  " + (d.bars_count || 0) + " bars";
+      }
+    } catch (e) { /* silently skip if endpoint fails */ }
+  }
+
+  // ── Company fundamentals ─────────────────────────────────────────────────
+  async function loadFundamentals() {
+    var el = document.getElementById("company-body");
+    try {
+      var r = await fetch("/stock/" + encodeURIComponent(KEY) + "/fundamentals");
+      if (!r.ok) { el.innerHTML = '<div class="loading">Company data unavailable.</div>'; return; }
+      var d = await r.json();
+      if (d.error) { el.innerHTML = '<div class="loading">Company data unavailable.</div>'; return; }
+
+      // Sector badge
+      if (d.sector) {
+        var sb = document.getElementById("company-sector");
+        sb.textContent = d.industry || d.sector;
+        sb.style.display = "inline";
+      }
+
+      var html = "";
+
+      // Business summary
+      if (d.summary) {
+        var full = d.full_summary || d.summary;
+        var short = d.summary;
+        var needsMore = full.length > short.length;
+        html += '<div class="fund-summary" id="fund-summary-text">' + short +
+          (needsMore ? '<span class="more" id="fund-show-more"> Show more ▾</span>' : '') +
+          '</div>';
+      }
+
+      // Key stats grid
+      var stats = [];
+      if (d.market_cap_cr != null) stats.push(["Market Cap", "₹" + d.market_cap_cr.toLocaleString("en-IN") + " Cr"]);
+      if (d.pe_ratio != null)      stats.push(["P/E Ratio", d.pe_ratio.toFixed(1) + "×"]);
+      if (d.week52_low != null && d.week52_high != null) stats.push(["52W Range", "₹" + d.week52_low + " – ₹" + d.week52_high]);
+      if (d.employees != null)     stats.push(["Employees", d.employees.toLocaleString("en-IN")]);
+      if (d.website)               stats.push(["Website", '<a href="' + d.website + '" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-size:0.8rem;">' + d.website.replace(/^https?:\/\//, "") + '</a>']);
+
+      if (stats.length) {
+        html += '<div class="fund-grid">';
+        stats.forEach(function (s) {
+          html += '<div class="fund-stat"><div class="fund-stat-label">' + s[0] + '</div><div class="fund-stat-value">' + s[1] + '</div></div>';
+        });
+        html += '</div>';
+      }
+
+      // Ownership bar
+      if (d.promoter_pct != null) {
+        html += '<div class="fund-section-title">Ownership</div>';
+        var pPct = d.promoter_pct || 0;
+        var iPct = d.institutional_pct || 0;
+        var pubPct = d.public_pct || Math.max(0, 100 - pPct - iPct);
+        html += '<div class="ownership-bar">' +
+          '<div class="ownership-bar-promoter" style="width:' + pPct + '%"></div>' +
+          '<div class="ownership-bar-inst" style="width:' + iPct + '%"></div>' +
+          '<div class="ownership-bar-public" style="width:' + pubPct + '%"></div>' +
+          '</div>' +
+          '<div class="ownership-legend">' +
+          '<span><span class="ownership-dot" style="background:var(--accent)"></span>Promoters ' + pPct.toFixed(1) + '%</span>' +
+          (iPct > 0 ? '<span><span class="ownership-dot" style="background:var(--green)"></span>Institutional ' + iPct.toFixed(1) + '%</span>' : '') +
+          '<span><span class="ownership-dot" style="background:var(--border)"></span>Public ' + pubPct.toFixed(1) + '%</span>' +
+          '</div>';
+      }
+
+      // Management
+      if (d.officers && d.officers.length) {
+        html += '<div class="fund-section-title">Management</div><div class="officer-list">';
+        d.officers.forEach(function (o) {
+          html += '<div class="officer-row"><span class="officer-name">' + o.name + '</span><span class="officer-title">' + o.title + '</span></div>';
+        });
+        html += '</div>';
+      }
+
+      el.innerHTML = html;
+
+      // Wire "show more" toggle
+      var showMore = document.getElementById("fund-show-more");
+      var summaryEl = document.getElementById("fund-summary-text");
+      if (showMore && d.full_summary) {
+        var expanded = false;
+        showMore.addEventListener("click", function () {
+          expanded = !expanded;
+          summaryEl.innerHTML = expanded
+            ? d.full_summary + '<span class="more" id="fund-show-more"> Show less ▴</span>'
+            : d.summary + '<span class="more" id="fund-show-more"> Show more ▾</span>';
+          document.getElementById("fund-show-more").addEventListener("click", arguments.callee.bind(this));
+        });
+      }
+    } catch (e) {
+      el.innerHTML = '<div class="loading">Failed to load company info.</div>';
+    }
+  }
+
+  // ── Related scripts modal ─────────────────────────────────────────────────
+  var modal = document.getElementById("news-modal");
+  document.getElementById("modal-close").addEventListener("click", closeStockModal);
+  modal.addEventListener("click", function (e) { if (e.target === modal) closeStockModal(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeStockModal(); });
+
+  function closeStockModal() {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  }
+
+  function openStockNewsModal(n) {
+    var articleEl = document.getElementById("modal-article");
+    var stocksEl  = document.getElementById("modal-stocks");
+    var sc = n.sentiment_score;
+    var sentHtml = sc != null
+      ? '<span class="' + (sc > 0.3 ? "sent-pos" : sc < -0.3 ? "sent-neg" : "") + '">' + (sc > 0 ? "+" : "") + sc.toFixed(2) + "</span>"
+      : "";
+    var headlineHtml = n.url
+      ? '<a href="' + n.url + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">' + n.headline + "</a>"
+      : n.headline;
+    articleEl.innerHTML =
+      '<div style="padding-bottom:1rem;border-bottom:1px solid var(--border);margin-bottom:0.5rem;">' +
+      '<div style="display:flex;gap:0.5rem;font-size:0.75rem;color:var(--text-muted);margin-bottom:0.4rem;flex-wrap:wrap;">' +
+      "<span>" + (n.source || "") + "</span>" + sentHtml + "</div>" +
+      '<div style="font-size:0.95rem;line-height:1.5;">' + headlineHtml + "</div></div>";
+    stocksEl.innerHTML = '<div style="font-size:0.85rem;color:var(--text-muted);">Loading related scripts…</div>';
+    modal.style.display = "flex";
+    document.body.style.overflow = "hidden";
+    fetchStockModalScripts(n, stocksEl);
+  }
+
+  async function fetchStockModalScripts(n, el) {
+    try {
+      var key = n.instrument_key;
+      var items = [];
+      var title = "Related script";
+      if (key) {
+        var r = await fetch("/stock/" + encodeURIComponent(key) + "/info");
+        if (r.ok) {
+          var d = await r.json();
+          items = [{ trading_symbol: d.trading_symbol, name: d.name, ltp: d.ltp, change_pct: d.change_pct, instrument_key: key }];
+        }
+      } else {
+        var r2 = await fetch("/paper/scanner?window=15");
+        if (r2.ok) {
+          var d2 = await r2.json();
+          var sc = n.sentiment_score || 0;
+          items = sc >= 0.1 ? d2.gainers.slice(0, 5)
+                : sc <= -0.1 ? d2.losers.slice(0, 5)
+                : [...d2.gainers.slice(0, 3), ...d2.losers.slice(0, 2)];
+          title = "Top movers (15 min)";
+          items = items.map(function (s) {
+            return { trading_symbol: s.trading_symbol, name: "", ltp: s.ltp || s.close_now, change_pct: s.return_pct, instrument_key: s.instrument_key };
+          });
+        }
+      }
+      if (!items.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;">No related scripts found.</div>'; return; }
+      var html = '<div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.6rem;">' + title + "</div>";
+      items.forEach(function (s) {
+        var ltp = s.ltp != null ? s.ltp.toFixed(2) : "—";
+        var pct = s.change_pct;
+        var chgStyle = pct != null ? (pct >= 0 ? "color:var(--green)" : "color:var(--red)") : "";
+        var chgText  = pct != null ? (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%" : "—";
+        var qty = s.ltp > 0 ? Math.max(1, Math.floor(12500 / s.ltp)) : 1;
+        var cardUrl = "/static/stock.html?key=" + encodeURIComponent(s.instrument_key) +
+          "&symbol=" + encodeURIComponent(s.trading_symbol) +
+          "&name=" + encodeURIComponent(s.name || s.trading_symbol);
+        html +=
+          '<div class="modal-stock-card" data-url="' + cardUrl + '" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.5rem;cursor:pointer;">' +
+          '<div style="display:flex;align-items:baseline;gap:0.5rem;margin-bottom:0.25rem;">' +
+          '<span style="font-weight:800;font-size:1rem;">' + s.trading_symbol + "</span>" +
+          (s.name ? '<span style="font-size:0.72rem;color:var(--text-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + s.name + "</span>" : "") +
+          '<span style="font-weight:700;font-size:0.88rem;font-family:monospace;' + chgStyle + '">' + chgText + "</span></div>" +
+          '<div style="font-size:1rem;font-weight:600;font-family:monospace;margin-bottom:0.65rem;">₹' + ltp + "</div>" +
+          '<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">' +
+          '<input type="number" value="' + qty + '" min="1" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.3rem 0.6rem;font-size:0.85rem;width:70px;font-family:monospace;" class="modal-qty">' +
+          '<button class="btn-long modal-order-btn" data-key="' + s.instrument_key + '" data-side="long">Long ▲</button>' +
+          '<button class="btn-short modal-order-btn" data-key="' + s.instrument_key + '" data-side="short">Short ▼</button>' +
+          '<span class="modal-order-result" style="font-size:0.78rem;color:var(--text-muted);"></span></div></div>';
+      });
+      el.innerHTML = html;
+      el.querySelectorAll(".modal-stock-card[data-url]").forEach(function (card) {
+        card.addEventListener("click", function (e) {
+          if (e.target.closest("button") || e.target.closest("input")) return;
+          window.open(card.dataset.url, "_blank");
+        });
+      });
+      el.querySelectorAll(".modal-order-btn").forEach(function (btn) {
+        btn.addEventListener("click", async function () {
+          var key2 = this.dataset.key;
+          var side = this.dataset.side;
+          var card = this.closest(".modal-stock-card");
+          var qty2 = parseInt(card.querySelector(".modal-qty").value, 10) || 1;
+          var resultEl = card.querySelector(".modal-order-result");
+          var btns = card.querySelectorAll(".modal-order-btn");
+          btns.forEach(function (b) { b.disabled = true; });
+          resultEl.textContent = "Placing…";
+          try {
+            var resp = await fetch("/paper/force-entry?instrument_key=" + encodeURIComponent(key2) + "&side=" + side + "&qty=" + qty2, { method: "POST" });
+            var rd = await resp.json();
+            if (rd.ok) {
+              resultEl.textContent = "✓ " + side + " " + qty2 + " @ ₹" + rd.entry_price.toFixed(2);
+              resultEl.style.color = "var(--green)";
+            } else {
+              resultEl.textContent = rd.error || "Failed";
+              resultEl.style.color = "var(--red)";
+            }
+          } catch (_) { resultEl.textContent = "Network error"; resultEl.style.color = "var(--red)"; }
+          btns.forEach(function (b) { b.disabled = false; });
+        });
+      });
+    } catch (e) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;">Failed to load scripts.</div>';
+    }
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  loadInfo();
+  loadSignal();
+  loadCandles("1d");
+  loadFundamentals();
+  loadNews();
+  setInterval(loadInfo, 5000);
+  setInterval(loadSignal, 30000); // refresh signal every 30s
+})();
+</script>
+</body>
+</html>

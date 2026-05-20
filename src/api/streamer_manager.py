@@ -61,7 +61,12 @@ def _record_quotes(tick_data) -> None:
     for key, payload in feeds.items():
         if not isinstance(payload, dict):
             continue
-        ltpc = payload.get("ltpc") or (payload.get("ff", {}) or {}).get("marketFF", {}).get("ltpc")
+        ff = payload.get("ff") or {}
+        ltpc = (
+            payload.get("ltpc")
+            or ff.get("marketFF", {}).get("ltpc")
+            or ff.get("indexFF", {}).get("ltpc")   # NSE_INDEX symbols use indexFF
+        )
         if not ltpc:
             continue
         ltp = ltpc.get("ltp")
@@ -122,34 +127,47 @@ def streamer_health() -> dict:
 
 
 async def _health_monitor_loop() -> None:
-    """Watchdog. If we're in market hours and ticks have stopped for longer
-    than STALE_TICK_THRESHOLD_SECONDS, restart the streamer. Belt-and-suspenders
-    on top of the SDK's own auto_reconnect, which the empirical 2026-05-15
-    overnight drop showed could give up after enough DNS failures."""
+    """Watchdog with exponential backoff. Restarts the streamer if stale during
+    market hours, but backs off aggressively on repeated failures to avoid
+    hammering Upstox and triggering 429 rate limits."""
+    consecutive_failures = 0
     try:
         while True:
-            await asyncio.sleep(HEALTH_CHECK_INTERVAL_SECONDS)
+            # Backoff: 30s normal, up to 5 minutes after repeated failures
+            wait = min(HEALTH_CHECK_INTERVAL_SECONDS * (2 ** consecutive_failures), 300)
+            await asyncio.sleep(wait)
+
             if not is_market_open():
+                consecutive_failures = 0
                 continue
             if streamer is None:
                 continue
             since_last = time.time() - last_tick_at if last_tick_at else float("inf")
             if since_last <= STALE_TICK_THRESHOLD_SECONDS:
+                consecutive_failures = 0  # ticks flowing — reset backoff
                 continue
+
             logger.warning(
-                f"Streamer stale during market hours ({since_last:.0f}s since last tick). "
-                f"Restarting upstream connection."
+                f"Streamer stale ({since_last:.0f}s since last tick). "
+                f"Restart attempt #{consecutive_failures + 1} (backoff {wait:.0f}s)."
             )
             token = await get_valid_token()
             if not token:
-                logger.error(
-                    "Cannot restart streamer: no valid token in DB. User must re-authenticate."
-                )
+                logger.error("Cannot restart streamer: no valid token.")
+                consecutive_failures += 1
                 continue
             try:
                 await start_market_data_streamer(token)
+                # Give it 10 seconds to produce a tick before judging success
+                await asyncio.sleep(10)
+                if last_tick_at and time.time() - last_tick_at < 15:
+                    logger.info("Streamer restart succeeded — ticks flowing.")
+                    consecutive_failures = 0
+                else:
+                    consecutive_failures += 1
             except Exception as e:
                 logger.error(f"Streamer auto-restart failed: {type(e).__name__}: {e}")
+                consecutive_failures += 1
     except asyncio.CancelledError:
         return
 

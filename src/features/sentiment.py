@@ -207,6 +207,9 @@ async def score_unscored_news(
         async with sem:
             ticker = _ticker_for(instrument_key)
             result = await scorer.score(headline, ticker=ticker)
+            # Hold the semaphore slot for 2s after each call so we stay well under
+            # Tier-1's 50 RPM cap (2 concurrent × 1 call/2s = ~30 RPM max).
+            await asyncio.sleep(2.0)
             now = int(time.time())
             async with aiosqlite.connect(db_path) as udb:
                 await udb.execute(

@@ -53,6 +53,9 @@ class PaperExecutor:
             model_name=self.model_name,
             entry_sentiment_score=entry_sentiment_score,
         )
+        # Seed fill price so mark-to-market has a baseline even before the first tick.
+        from src.api import streamer_manager
+        streamer_manager.last_quote_by_symbol[intent.instrument_key] = fill_price
         logger.info(
             f"PAPER ENTRY {pos.side} {pos.qty} {pos.instrument_key} @ {pos.entry_price:.2f} "
             f"(sl={pos.stop_loss_price:.2f} tp={pos.target_price:.2f} pred={intent.predicted_return:+.4f})"

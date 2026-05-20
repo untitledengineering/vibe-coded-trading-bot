@@ -59,6 +59,25 @@ async def insert_open_position(
         return cur.lastrowid
 
 
+async def update_stop_loss_price(
+    instrument_key: str,
+    entry_ts: int,
+    new_stop_loss: float,
+    db_path: Optional[str] = None,
+) -> None:
+    """Move stop-loss in-place (used by trailing stop logic)."""
+    async with aiosqlite.connect(db_path or DB_PATH) as db:
+        await db.execute(
+            """
+            UPDATE paper_positions
+            SET stop_loss_price = ?
+            WHERE instrument_key = ? AND entry_ts = ? AND exit_ts IS NULL
+            """,
+            (new_stop_loss, instrument_key, entry_ts),
+        )
+        await db.commit()
+
+
 async def mark_position_closed(
     pos: Position,
     db_path: Optional[str] = None,

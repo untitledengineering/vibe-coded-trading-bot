@@ -46,6 +46,7 @@ function switchTab(name) {
     if (name === "scanner") fetchScanner();
     if (name === "news") fetchNews();
     if (name === "signals") fetchSignals();
+    if (name === "market") fetchMovers();
 }
 
 document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -84,6 +85,8 @@ function startSSE() {
         if (cachedPaper && cachedPaper.open_positions && activeTab === "live") {
             updatePositionQuotes(cachedPaper.open_positions);
         }
+        // Patch live LTPs into market mover cards for streamed symbols
+        updateMoverQuotes();
     };
     eventSource.onerror = () => {
         eventSource.close();
@@ -221,17 +224,26 @@ function renderPositions(positions) {
         }
 
         const rat = rationale(p);
+        const estCost = p.estimated_cost_inr ?? 0;
+        const cleared = pnlVal > estCost;
+        const costLabel = estCost > 0
+            ? (cleared
+                ? `cost ₹${estCost.toFixed(0)} · <span style="color:var(--green)">cleared ✓</span>`
+                : `cost ₹${estCost.toFixed(0)} · <span style="color:var(--muted)">need ₹${(estCost - pnlVal).toFixed(0)} more</span>`)
+            : "";
         card.innerHTML = `
             <div class="pos-row">
-                <span class="pos-symbol">${p.trading_symbol}</span>
+                <span class="pos-symbol" data-sym-key="${p.instrument_key}">${displaySymbol(p.trading_symbol, p.instrument_key)}</span>
                 <span class="pos-side ${p.side}">${p.side}</span>
+                <button class="btn btn-small btn-warn btn-close-pos" data-key="${p.instrument_key}" data-symbol="${p.trading_symbol}" style="margin-left:auto;">Close</button>
             </div>
             <div class="pos-row">
-                <span class="pos-prices">qty ${p.qty} · @${p.entry_price.toFixed(2)} → ${quote != null ? quote.toFixed(2) : "—"}</span>
+                <span class="pos-prices" data-price="${p.instrument_key}">qty ${p.qty} · @${p.entry_price.toFixed(2)} → ${quote != null ? quote.toFixed(2) : "—"}</span>
                 <span class="pos-time mono">${fmtTimeIst(p.entry_ts)}</span>
             </div>
             ${rat ? `<div class="pos-rationale">${rat}</div>` : ""}
             <div class="pos-pnl ${pnlVal > 0 ? "up" : pnlVal < 0 ? "down" : "flat"}" data-pnl="${p.instrument_key}">${inrCompact(pnlVal)}</div>
+            ${costLabel ? `<div class="pos-cost-row">${costLabel}</div>` : ""}
             <div class="sltp-bar">
                 <div class="sltp-marker" style="left: calc(${markerPct}% - 6px);"></div>
             </div>
@@ -248,11 +260,137 @@ function updatePositionQuotes(positions) {
     for (const p of positions) {
         const quote = liveQuotes[p.instrument_key];
         if (quote == null) continue;
-        const pnlEl = positionsGrid.querySelector(`[data-pnl="${p.instrument_key}"]`);
-        if (!pnlEl) continue;
         const pnlVal = p.qty * (p.side === "long" ? (quote - p.entry_price) : (p.entry_price - quote));
-        pnlEl.textContent = inrCompact(pnlVal);
-        pnlEl.className = `pos-pnl ${pnlVal > 0 ? "up" : pnlVal < 0 ? "down" : "flat"}`;
+
+        const pnlEl = positionsGrid.querySelector(`[data-pnl="${p.instrument_key}"]`);
+        if (pnlEl) {
+            pnlEl.textContent = inrCompact(pnlVal);
+            pnlEl.className = `pos-pnl ${pnlVal > 0 ? "up" : pnlVal < 0 ? "down" : "flat"}`;
+        }
+        const priceEl = positionsGrid.querySelector(`[data-price="${p.instrument_key}"]`);
+        if (priceEl) {
+            priceEl.textContent = `qty ${p.qty} · @${p.entry_price.toFixed(2)} → ${quote.toFixed(2)}`;
+        }
+    }
+}
+
+// ============ Fast quote poller (2s) for open positions ============
+let _quotePollTimer = null;
+
+async function pollPositionQuotes() {
+    if (!cachedPaper || !(cachedPaper.open_positions || []).length) return;
+    try {
+        const r = await fetch("/paper/quotes");
+        if (!r.ok) return;
+        const quotes = await r.json();
+        let changed = false;
+        for (const [key, ltp] of Object.entries(quotes)) {
+            if (liveQuotes[key] !== ltp) { liveQuotes[key] = ltp; changed = true; }
+        }
+        if (changed && cachedPaper && activeTab === "live") {
+            updatePositionQuotes(cachedPaper.open_positions || []);
+        }
+    } catch (_) {}
+}
+
+function startQuotePoll() {
+    if (_quotePollTimer) return;
+    _quotePollTimer = setInterval(pollPositionQuotes, 1000);
+}
+function stopQuotePoll() {
+    clearInterval(_quotePollTimer);
+    _quotePollTimer = null;
+}
+
+// ============ Symbol display helpers ============
+const _symbolCache = {};
+
+function displaySymbol(sym, key) {
+    // If the API returned the raw instrument key (not in universe), show the
+    // exchange-stripped version immediately and kick off an async resolution.
+    if (!sym || sym.includes("|")) {
+        const short = sym ? sym.split("|")[1] : key.split("|")[1];
+        if (!_symbolCache[key]) resolveSymbolAsync(key);
+        return _symbolCache[key] || short;
+    }
+    return sym;
+}
+
+async function resolveSymbolAsync(key) {
+    if (_symbolCache[key]) return;
+    try {
+        const r = await fetch(`/stock/${encodeURIComponent(key)}/info`);
+        if (!r.ok) return;
+        const d = await r.json();
+        const name = d.trading_symbol || d.name;
+        if (name && !name.includes("|")) {
+            _symbolCache[key] = name;
+            // Patch all visible elements that still show the raw key
+            document.querySelectorAll(`[data-sym-key="${key}"]`).forEach(el => {
+                el.textContent = name;
+            });
+        }
+    } catch (_) {}
+}
+
+// ============ Activity panel ============
+const _SKIP_LABELS = {
+    below_edge_threshold: (n, paper) => `${n} signals below ${((paper?.min_predicted_edge ?? 0.003)*100).toFixed(2)}% edge · watching for conviction`,
+    below_cost_floor:     n => `${n} signals too small to cover costs`,
+    max_concurrent_reached: n => `all ${n > 1 ? n : 4} slots full`,
+    no_features_yet:      () => `building bar data · first decision soon`,
+    already_open:         n => `${n} symbols already held`,
+    cooldown:             n => `${n} symbols in 30-min cooldown`,
+    regime_suppressed:    n => `${n} signals suppressed by market regime`,
+};
+
+function updateActivityPanel(paper) {
+    const dot    = document.getElementById("activity-dot");
+    const cycle  = document.getElementById("activity-cycle");
+    const stream = document.getElementById("activity-stream");
+    const status = document.getElementById("activity-status");
+    const sigs   = document.getElementById("activity-top-signals");
+    if (!dot) return;
+
+    const age = paper.last_cycle_at
+        ? Math.round(paper.now_ts - paper.last_cycle_at)
+        : null;
+    const alive = age !== null && age < 10;
+    dot.className = "activity-dot " + (alive ? "alive" : "stale");
+    cycle.textContent = `cycle #${paper.cycles_run ?? "—"}${age !== null ? " · " + age + "s ago" : ""}`;
+
+    // Stream freshness from streamer_health block (top-level health pill populates this)
+    const sh = paper.streamer_health;
+    if (sh) {
+        const ta = sh.last_tick_seconds_ago;
+        stream.textContent = ta != null ? `stream ${ta}s ago` : "stream —";
+    }
+
+    // Skip reason → human sentence
+    const reasons = paper.last_skip_reasons || {};
+    const lines = Object.entries(reasons).map(([k, n]) => {
+        const fn = _SKIP_LABELS[k];
+        return fn ? fn(n, paper) : `${k}: ${n}`;
+    });
+    const decisionAgo = paper.last_decision_ts
+        ? Math.round((paper.now_ts - paper.last_decision_ts) / 60)
+        : null;
+    const decisionStr = decisionAgo !== null
+        ? ` (last model run ${decisionAgo}m ago)`
+        : "";
+    status.textContent = lines.length
+        ? lines.join(" · ") + decisionStr
+        : paper.running ? "scanning…" + decisionStr : "engine stopped";
+
+    // Top signals pills
+    sigs.innerHTML = "";
+    const top = paper.top_signals || [];
+    for (const { k, p } of top.slice(0, 6)) {
+        const sym = _symbolCache[k] || k.split("|")[1] || k;
+        const pill = document.createElement("span");
+        pill.className = `sig-pill ${p >= 0 ? "bull" : "bear"}`;
+        pill.textContent = `${sym} ${p >= 0 ? "+" : ""}${(p * 100).toFixed(2)}%`;
+        sigs.appendChild(pill);
     }
 }
 
@@ -271,14 +409,15 @@ function renderTrades(trades) {
         const pnlVal = t.realised_pnl_inr ?? 0;
         const pnlClass = pnlVal > 0 ? "up" : pnlVal < 0 ? "down" : "";
         const rat = rationale(t);
+        const costStr = t.actual_cost_inr != null ? `· cost ₹${t.actual_cost_inr.toFixed(0)}` : "";
         row.innerHTML = `
             <div class="trade-main">
                 <span class="trade-time mono">${fmtTimeIst(t.entry_ts)} → ${fmtTimeIst(t.exit_ts)}</span>
-                <span class="trade-symbol">${t.trading_symbol}</span>
+                <span class="trade-symbol" data-sym-key="${t.instrument_key}">${displaySymbol(t.trading_symbol, t.instrument_key)}</span>
                 <span class="trade-side ${t.side}">${t.side}</span>
                 <span class="mono trade-px">@${t.entry_price.toFixed(2)} → ${t.exit_price != null ? t.exit_price.toFixed(2) : "—"}</span>
                 <span class="trade-reason">${t.exit_reason ?? ""}</span>
-                <span class="trade-pnl mono ${pnlClass}">${inrCompact(pnlVal)}</span>
+                <span class="trade-pnl mono ${pnlClass}">${inrCompact(pnlVal)} <span class="muted" style="font-size:0.75em;font-weight:400;">${costStr}</span></span>
             </div>
             ${rat ? `<div class="trade-rationale">${rat}</div>` : ""}
         `;
@@ -343,7 +482,11 @@ function renderAuth(auth) {
 function renderStream(health) {
     if (!health) { orbStream.className = "orb"; streamDetail.textContent = "—"; return; }
     if (!health.streamer_running) { orbStream.className = "orb"; streamDetail.textContent = "idle"; return; }
-    if (health.stale) { orbStream.className = "orb warn"; streamDetail.textContent = `stalled (${health.last_tick_seconds_ago}s)`; return; }
+    if (health.stale) {
+        orbStream.className = "orb err";
+        streamDetail.textContent = "no live data · bot paused";
+        return;
+    }
     const ago = health.last_tick_seconds_ago;
     if (!health.market_open) {
         orbStream.className = "orb";
@@ -394,6 +537,7 @@ function renderPaper(paper) {
 
     // Live tab
     if (activeTab === "live") renderPositions(paper.open_positions || []);
+    updateActivityPanel(paper);
 
     // Trades tab
     renderTrades(paper.closed_trades_today || []);
@@ -471,7 +615,8 @@ async function fetchScanner() {
         const r = await fetch(`/paper/scanner?window=${scannerWindow}`);
         if (!r.ok) throw new Error(r.status);
         const data = await r.json();
-        $("scanner-updated").textContent = `as of ${fmtTimeIst(data.computed_at)} (${data.total_symbols} symbols)`;
+        const windowLabel = data.early_session ? "since open" : `${data.window_minutes}m`;
+        $("scanner-updated").textContent = `${windowLabel} · ${data.total_symbols} symbols · ${fmtTimeIst(data.computed_at)}`;
         renderScannerList(el, data.gainers, true);
         renderScannerList(el2, data.losers, false);
     } catch (e) {
@@ -554,9 +699,14 @@ async function fetchNews() {
                     <span class="news-source muted">${n.source}</span>
                     ${n.trading_symbol ? `<span class="news-ticker">${n.trading_symbol}</span>` : ""}
                     ${sentHtml}
+                    <span class="muted" style="margin-left:auto;font-size:0.72rem;opacity:0.6">tap for scripts →</span>
                 </div>
                 <div class="news-headline">${link}</div>
             `;
+            row.addEventListener("click", function (e) {
+                if (e.target.tagName === "A") return; // let article link open normally
+                openNewsModal(n);
+            });
             el.appendChild(row);
         }
     } catch (e) {
@@ -634,6 +784,48 @@ btnLogout.addEventListener("click", async () => {
     try { await fetch("/auth/logout", { method: "POST" }); await poll(); } finally { btnLogout.disabled = false; }
 });
 
+// Close individual position — event delegation on the grid
+positionsGrid.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".btn-close-pos");
+    if (!btn) return;
+    const key = btn.dataset.key, sym = btn.dataset.symbol;
+    if (!confirm(`Close ${sym} now at market price?`)) return;
+    btn.disabled = true;
+    btn.textContent = "…";
+    try {
+        const r = await fetch(`/paper/close/${encodeURIComponent(key)}`, { method: "POST" });
+        const data = await r.json();
+        if (data.ok) { await poll(); }
+        else { alert(data.error || "Failed to close position"); btn.disabled = false; btn.textContent = "Close"; }
+    } catch (_) { alert("Network error"); btn.disabled = false; btn.textContent = "Close"; }
+});
+
+// Extend loss cap buttons
+async function extendLossCap(amount) {
+    const btn = amount === 500 ? $("btn-extend-500") : $("btn-extend-1k");
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "…";
+    try {
+        const r = await fetch(`/paper/extend-loss-cap?amount=${amount}`, { method: "POST" });
+        const data = await r.json();
+        if (data.ok) {
+            btn.textContent = `✓ Cap ₹${data.effective_cap_inr.toLocaleString("en-IN")}`;
+            btn.style.color = "var(--green)";
+            await poll();
+            setTimeout(() => { btn.textContent = orig; btn.style.color = ""; btn.disabled = false; }, 3000);
+            return;
+        } else {
+            alert(data.error || "Failed");
+        }
+    } catch (_) { alert("Network error"); }
+    btn.textContent = orig;
+    btn.style.color = "";
+    btn.disabled = false;
+}
+$("btn-extend-500").addEventListener("click", () => extendLossCap(500));
+$("btn-extend-1k").addEventListener("click",  () => extendLossCap(1000));
+
 // ============ Poll loop ============
 let cachedPaper = null;
 
@@ -650,17 +842,124 @@ async function poll() {
     renderAuth(auth);
     renderStream(health);
     if (paper) { renderPaper(paper); cachedPaper = paper; }
-    if (auth && auth.authenticated) startSSE(); else stopSSE();
+    if (auth && auth.authenticated) { startSSE(); startQuotePoll(); } else { stopSSE(); stopQuotePoll(); }
 }
 
+// ============ Market movers tab ============
+async function fetchMovers() {
+    const gainersEl = $("gainers-cards"), losersEl = $("losers-cards");
+    gainersEl.innerHTML = '<div class="empty">Loading all NSE stocks…</div>';
+    losersEl.innerHTML  = '<div class="empty">Loading all NSE stocks…</div>';
+    try {
+        const r = await fetch("/market/movers?limit=25");
+        if (!r.ok) throw new Error(r.status);
+        const data = await r.json();
+        $("movers-meta").textContent = `${data.total_stocks} stocks · as of ${fmtTimeIst(data.computed_at)}`;
+        renderMoverCards(gainersEl, data.gainers, true);
+        renderMoverCards(losersEl,  data.losers,  false);
+    } catch(e) {
+        gainersEl.innerHTML = `<div class="empty">Failed: ${e.message}</div>`;
+        losersEl.innerHTML  = '<div class="empty">—</div>';
+    }
+}
+
+function renderMoverCards(container, items, isGainer) {
+    if (!items || items.length === 0) { container.innerHTML = '<div class="empty">No data.</div>'; return; }
+    container.innerHTML = "";
+    for (const s of items) {
+        const card = document.createElement("div");
+        card.className = "mover-card";
+        card.dataset.key = s.instrument_key;
+        card.dataset.open = s.open;
+        card.style.cursor = "pointer";
+        card.addEventListener("click", (e) => {
+            if (e.target.closest(".btn-place-order")) return;
+            const url = `/static/stock.html?key=${encodeURIComponent(s.instrument_key)}&symbol=${encodeURIComponent(s.trading_symbol)}&name=${encodeURIComponent(s.name || s.trading_symbol)}`;
+            window.open(url, "_blank");
+        });
+        const chgClass = isGainer ? "up" : "down";
+        const sign = isGainer ? "+" : "";
+        const low = s.low != null ? s.low.toFixed(2) : "—";
+        const high = s.high != null ? s.high.toFixed(2) : "—";
+        // Use live SSE quote if available (only for 209 streamed F&O stocks), else REST price
+        const liveLtp = liveQuotes[s.instrument_key];
+        const displayLtp = liveLtp ?? s.ltp;
+        const livePct = s.open > 0 ? (displayLtp - s.open) / s.open * 100 : s.change_pct;
+        const liveSign = livePct >= 0 ? "+" : "";
+        const liveClass = livePct >= 0 ? "up" : "down";
+        card.innerHTML = `
+            <div class="mover-top">
+                <span class="mover-symbol">${s.trading_symbol}</span>
+                <span class="mover-name">${s.name || ""}</span>
+                <span class="mover-chg ${liveClass}" data-chg="${s.instrument_key}">${liveSign}${livePct.toFixed(2)}%</span>
+            </div>
+            <div class="mover-row2">
+                <span class="mover-ltp" data-ltp="${s.instrument_key}">₹${displayLtp.toFixed(2)}</span>
+                <span class="mover-range">L ${low} · H ${high}</span>
+            </div>
+            <div class="mover-actions">
+                <button class="btn-long  btn-place-order" data-key="${s.instrument_key}" data-side="long"  data-sym="${s.trading_symbol}">Long ▲</button>
+                <button class="btn-short btn-place-order" data-key="${s.instrument_key}" data-side="short" data-sym="${s.trading_symbol}">Short ▼</button>
+            </div>
+        `;
+        container.appendChild(card);
+    }
+}
+
+// Called by the SSE handler to patch live LTPs into visible mover cards
+function updateMoverQuotes() {
+    if (activeTab !== "market") return;
+    document.querySelectorAll(".mover-card[data-key]").forEach(card => {
+        const key = card.dataset.key;
+        const ltp = liveQuotes[key];
+        if (ltp == null) return;
+        const open = parseFloat(card.dataset.open);
+        const ltpEl = card.querySelector(`[data-ltp="${key}"]`);
+        const chgEl = card.querySelector(`[data-chg="${key}"]`);
+        if (ltpEl) ltpEl.textContent = `₹${ltp.toFixed(2)}`;
+        if (chgEl && open > 0) {
+            const pct = (ltp - open) / open * 100;
+            chgEl.textContent = `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+            chgEl.className = `mover-chg ${pct >= 0 ? "up" : "down"}`;
+        }
+    });
+}
+
+// Event delegation for order buttons
+document.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".btn-place-order");
+    if (!btn) return;
+    const key = btn.dataset.key, side = btn.dataset.side, sym = btn.dataset.sym;
+    if (!confirm(`Place ${side.toUpperCase()} on ${sym}?`)) return;
+    const allBtns = btn.closest(".mover-card").querySelectorAll(".btn-place-order");
+    allBtns.forEach(b => b.disabled = true);
+    try {
+        const r = await fetch(`/paper/force-entry?instrument_key=${encodeURIComponent(key)}&side=${side}`, { method: "POST" });
+        const data = await r.json();
+        if (data.ok) {
+            btn.textContent = "✓ Placed";
+            await poll();
+        } else {
+            alert(data.error || "Failed to place order");
+            allBtns.forEach(b => b.disabled = false);
+        }
+    } catch(_) {
+        alert("Network error");
+        allBtns.forEach(b => b.disabled = false);
+    }
+});
+
+$("btn-refresh-movers").addEventListener("click", fetchMovers);
+
 // Per-tab slow polls (scanner/news/signals refresh at their own pace)
-let scannerTimer = null, newsTimer = null, signalsTimer = null;
+let scannerTimer = null, newsTimer = null, signalsTimer = null, moversTimer = null;
 
 function startTabPolls() {
-    clearInterval(scannerTimer); clearInterval(newsTimer); clearInterval(signalsTimer);
+    clearInterval(scannerTimer); clearInterval(newsTimer); clearInterval(signalsTimer); clearInterval(moversTimer);
     scannerTimer = setInterval(() => { if (activeTab === "scanner") fetchScanner(); }, 30_000);
     newsTimer    = setInterval(() => { if (activeTab === "news")    fetchNews();    }, 60_000);
     signalsTimer = setInterval(() => { if (activeTab === "signals") fetchSignals(); }, 30_000);
+    moversTimer  = setInterval(() => { if (activeTab === "market")  fetchMovers();  }, 60_000);
 }
 
 function tick() { updateClock(cachedPaper); }
@@ -670,3 +969,209 @@ tick();
 setInterval(poll, 3000);
 setInterval(tick, 1000);
 startTabPolls();
+
+// ============ News → Related scripts modal ============
+function openNewsModal(n) {
+    const articleEl = $("modal-article-section");
+    const stocksEl  = $("modal-stocks-section");
+
+    const sl = n.sentiment_score != null ? sentimentLabel(n.sentiment_score) : null;
+    const sentHtml = sl ? `<span class="sent-badge ${sl.cls}">${sl.text}</span>` : "";
+    const ticker = n.trading_symbol ? `<span class="news-ticker">${n.trading_symbol}</span>` : "";
+    const headline = n.url
+        ? `<a href="${n.url}" target="_blank" rel="noopener">${n.headline}</a>`
+        : n.headline;
+    articleEl.innerHTML = `
+        <div class="modal-article">
+            <div class="modal-article-meta">
+                <span class="mono">${fmtTimeIst(n.published_at)}</span>
+                <span>${n.source || ""}</span>
+                ${ticker}${sentHtml}
+            </div>
+            <div class="modal-article-headline">${headline}</div>
+        </div>`;
+
+    stocksEl.innerHTML = `<div class="muted" style="font-size:0.85rem;padding:0.5rem 0">Loading related scripts…</div>`;
+    $("news-modal").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+
+    fetchRelatedStocks(n, stocksEl);
+}
+
+const _NEWS_STOP = new Set([
+    "the","a","an","and","or","of","in","at","to","is","are","was","were","be",
+    "been","has","have","had","that","this","for","on","with","as","by","from",
+    "its","it","new","will","says","said","after","but","up","down","over","may",
+    "ltd","limited","pvt","private","india","indian","co","corp","industries",
+    "reports","quarterly","results","profit","loss","revenue","q1","q2","q3","q4",
+    "share","shares","stock","market","nse","bse","crore","lakh","rupees","rs",
+]);
+
+function _extractKeywords(headline) {
+    return headline
+        .replace(/[^a-zA-Z0-9 ]/g, " ")
+        .split(/\s+/)
+        .map(w => w.toLowerCase())
+        .filter(w => w.length >= 3 && !_NEWS_STOP.has(w));
+}
+
+async function fetchRelatedStocks(n, el) {
+    try {
+        if (n.instrument_key) {
+            // Directly linked stock — show it plus keyword search for more
+            const [infoR, searchR] = await Promise.allSettled([
+                fetch(`/stock/${encodeURIComponent(n.instrument_key)}/info`),
+                fetch(`/market/search?q=${encodeURIComponent(n.headline)}&limit=3`),
+            ]);
+            let cards = "";
+            let count = 0;
+            if (infoR.status === "fulfilled" && infoR.value.ok) {
+                const d = await infoR.value.json();
+                cards += buildModalStockCard(d, n.instrument_key);
+                count++;
+            }
+            if (searchR.status === "fulfilled" && searchR.value.ok) {
+                const sd = await searchR.value.json();
+                for (const r of (sd.results || [])) {
+                    if (r.instrument_key === n.instrument_key) continue; // already shown
+                    cards += buildModalStockCard({ trading_symbol: r.trading_symbol, name: r.name, ltp: null, change_pct: null }, r.instrument_key);
+                    count++;
+                }
+            }
+            if (!count) { el.innerHTML = '<div class="muted">Could not load stock data.</div>'; return; }
+            el.innerHTML = `<div class="modal-stocks-title">Related scripts</div>` + cards;
+        } else {
+            // Market-wide news: search by headline keywords
+            const kws = _extractKeywords(n.headline || "");
+            if (!kws.length) { el.innerHTML = '<div class="muted">No specific stocks found for this headline.</div>'; return; }
+            const query = kws.slice(0, 4).join(" ");
+            const r = await fetch(`/market/search?q=${encodeURIComponent(query)}&limit=6`);
+            if (!r.ok) { el.innerHTML = '<div class="muted">Search unavailable.</div>'; return; }
+            const d = await r.json();
+            if (!d.results || !d.results.length) {
+                el.innerHTML = '<div class="muted">No matching scripts found for this article.</div>';
+                return;
+            }
+            el.innerHTML = `<div class="modal-stocks-title">Mentioned in article</div>` +
+                d.results.map(r => buildModalStockCard(
+                    { trading_symbol: r.trading_symbol, name: r.name, ltp: null, change_pct: null },
+                    r.instrument_key
+                )).join("");
+            // Async-fill prices for matched stocks
+            for (const row of d.results) {
+                fetch(`/stock/${encodeURIComponent(row.instrument_key)}/info`)
+                    .then(res => res.ok ? res.json() : null)
+                    .then(info => {
+                        if (!info) return;
+                        const card = el.querySelector(`[data-key="${CSS.escape(row.instrument_key)}"]`);
+                        if (!card) return;
+                        if (info.ltp != null) card.querySelector(".modal-stock-ltp").textContent = "₹" + info.ltp.toFixed(2);
+                        if (info.change_pct != null) {
+                            const chgEl = card.querySelector(".modal-stock-chg");
+                            chgEl.textContent = (info.change_pct >= 0 ? "+" : "") + info.change_pct.toFixed(2) + "%";
+                            chgEl.className = "modal-stock-chg " + (info.change_pct >= 0 ? "up" : "down");
+                        }
+                        if (info.ltp > 0) card.querySelector(".modal-qty").value = Math.max(1, Math.floor(12500 / info.ltp));
+                    }).catch(() => {});
+            }
+        }
+        wireModalOrders(el);
+    } catch (e) {
+        el.innerHTML = '<div class="muted">Failed to load related scripts.</div>';
+    }
+}
+
+function buildModalStockCard(d, key) {
+    const pct = d.change_pct;
+    const chgClass = pct != null ? (pct >= 0 ? "up" : "down") : "";
+    const chgText  = pct != null ? (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%" : "—";
+    const ltp      = d.ltp != null ? d.ltp.toFixed(2) : "—";
+    const qty      = d.ltp > 0 ? Math.max(1, Math.floor(12500 / d.ltp)) : 1;
+    const sym      = d.trading_symbol || key;
+    const name     = encodeURIComponent(d.name || sym);
+    const url      = `/static/stock.html?key=${encodeURIComponent(key)}&symbol=${encodeURIComponent(sym)}&name=${name}`;
+    return `<div class="modal-stock-card" data-key="${key}" data-url="${url}" style="cursor:pointer;">
+        <div class="modal-stock-top">
+            <span class="modal-stock-symbol">${sym}</span>
+            <span class="modal-stock-name">${d.name || ""}</span>
+            <span class="modal-stock-chg ${chgClass}">${chgText}</span>
+        </div>
+        <div class="modal-stock-ltp">₹${ltp}</div>
+        <div class="modal-order-row">
+            <input type="number" class="modal-qty" value="${qty}" min="1">
+            <button class="btn-long modal-order-btn" data-key="${key}" data-side="long">Long ▲</button>
+            <button class="btn-short modal-order-btn" data-key="${key}" data-side="short">Short ▼</button>
+            <span class="modal-order-result"></span>
+        </div>
+    </div>`;
+}
+
+function buildModalScannerCard(s) {
+    const pct  = s.return_pct;
+    const ltp  = s.ltp || s.close_now;
+    const qty  = ltp > 0 ? Math.max(1, Math.floor(12500 / ltp)) : 1;
+    const chgClass = pct >= 0 ? "up" : "down";
+    return `<div class="modal-stock-card">
+        <div class="modal-stock-top">
+            <span class="modal-stock-symbol">${s.trading_symbol}</span>
+            <span class="modal-stock-chg ${chgClass}">${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%</span>
+        </div>
+        <div class="modal-stock-ltp">₹${ltp != null ? ltp.toFixed(2) : "—"}</div>
+        <div class="modal-order-row">
+            <input type="number" class="modal-qty" value="${qty}" min="1">
+            <button class="btn-long modal-order-btn" data-key="${s.instrument_key}" data-side="long">Long ▲</button>
+            <button class="btn-short modal-order-btn" data-key="${s.instrument_key}" data-side="short">Short ▼</button>
+            <span class="modal-order-result"></span>
+        </div>
+    </div>`;
+}
+
+function wireModalOrders(container) {
+    // Card click → open stock detail page
+    container.querySelectorAll(".modal-stock-card[data-url]").forEach(card => {
+        card.addEventListener("click", function (e) {
+            if (e.target.closest("button") || e.target.closest("input")) return;
+            window.open(this.dataset.url, "_blank");
+        });
+    });
+
+    container.querySelectorAll(".modal-order-btn").forEach(btn => {
+        btn.addEventListener("click", async function () {
+            const key  = this.dataset.key;
+            const side = this.dataset.side;
+            const card = this.closest(".modal-stock-card");
+            const qty  = parseInt(card.querySelector(".modal-qty").value, 10) || 1;
+            const resultEl = card.querySelector(".modal-order-result");
+            const allBtns  = card.querySelectorAll(".modal-order-btn");
+            allBtns.forEach(b => b.disabled = true);
+            resultEl.textContent = "Placing…";
+            resultEl.style.color = "var(--text-muted)";
+            try {
+                const r = await fetch(
+                    `/paper/force-entry?instrument_key=${encodeURIComponent(key)}&side=${side}&qty=${qty}`,
+                    { method: "POST" }
+                );
+                const d = await r.json();
+                if (d.ok) {
+                    resultEl.textContent = `✓ ${side} ${qty} @ ₹${d.entry_price.toFixed(2)}`;
+                    resultEl.style.color = "var(--green)";
+                } else {
+                    resultEl.textContent = d.error || "Failed";
+                    resultEl.style.color = "var(--red)";
+                }
+            } catch (_) {
+                resultEl.textContent = "Network error";
+                resultEl.style.color = "var(--red)";
+            }
+            allBtns.forEach(b => b.disabled = false);
+        });
+    });
+}
+
+function closeNewsModal() {
+    $("news-modal").classList.add("hidden");
+    document.body.style.overflow = "";
+}
+$("news-modal-close").addEventListener("click", closeNewsModal);
+$("news-modal").addEventListener("click", function (e) { if (e.target === this) closeNewsModal(); });
+document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeNewsModal(); });

@@ -97,11 +97,24 @@
             <button class="tab-btn" data-tab="scanner" role="tab">Scanner</button>
             <button class="tab-btn" data-tab="news" role="tab">News</button>
             <button class="tab-btn" data-tab="signals" role="tab">Signals</button>
+            <button class="tab-btn" data-tab="market" role="tab">Market</button>
             <button class="tab-btn" data-tab="risk" role="tab">Risk</button>
         </nav>
 
         <!-- TAB: LIVE -->
         <div id="tab-live" class="tab-content" role="tabpanel">
+
+            <!-- Engine activity feed -->
+            <div id="activity-panel" class="activity-panel">
+                <div class="activity-header">
+                    <span class="activity-dot" id="activity-dot"></span>
+                    <span id="activity-cycle" class="mono muted">cycle —</span>
+                    <span id="activity-stream" class="mono muted">stream —</span>
+                </div>
+                <div id="activity-status" class="activity-status muted">Waiting…</div>
+                <div id="activity-top-signals" class="activity-signals"></div>
+            </div>
+
             <section class="section">
                 <header class="section-head">
                     <h2>Open positions</h2>
@@ -193,6 +206,24 @@
             </div>
         </div>
 
+        <!-- TAB: MARKET -->
+        <div id="tab-market" class="tab-content hidden" role="tabpanel">
+            <div class="movers-header">
+                <span id="movers-meta" class="muted" style="font-size:0.78rem;">—</span>
+                <button id="btn-refresh-movers" class="btn btn-small btn-ghost" type="button">Refresh</button>
+            </div>
+            <div class="movers-grid">
+                <div class="movers-col">
+                    <header class="section-head"><h2>Top gainers</h2><span class="badge gain">▲</span></header>
+                    <div id="gainers-cards" class="movers-cards"><div class="empty">Loading…</div></div>
+                </div>
+                <div class="movers-col">
+                    <header class="section-head"><h2>Top losers</h2><span class="badge loss">▼</span></header>
+                    <div id="losers-cards" class="movers-cards"><div class="empty">Loading…</div></div>
+                </div>
+            </div>
+        </div>
+
         <!-- TAB: RISK -->
         <div id="tab-risk" class="tab-content hidden" role="tabpanel">
             <div class="risk-grid">
@@ -241,9 +272,25 @@
         <footer class="footer">
             <span class="muted mono">model · <span id="footer-model">—</span></span>
             <span class="muted mono">cycles · <span id="footer-cycles">—</span></span>
-            <span id="halt-banner" class="halt-banner hidden">HALTED · <span id="halt-reason"></span></span>
+            <span id="halt-banner" class="halt-banner hidden">HALTED · <span id="halt-reason"></span>
+                <button id="btn-extend-500" class="btn btn-small btn-ghost" type="button">+₹500</button>
+                <button id="btn-extend-1k" class="btn btn-small btn-ghost" type="button">+₹1000</button>
+            </span>
         </footer>
     </div>
+
+    <!-- News → Related scripts modal -->
+    <div id="news-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span class="modal-title">Related scripts</span>
+                <button class="modal-close-btn" id="news-modal-close">✕</button>
+            </div>
+            <div id="modal-article-section"></div>
+            <div id="modal-stocks-section"></div>
+        </div>
+    </div>
+
     <script src="/static/app.js"></script>
 </body>
 </html>
